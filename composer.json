@@ -1,6 +1,6 @@
 {
-  "name": "smn/<package_name>",
-  "description": "<description>",
+  "name": "esposimo/assert",
+  "description": "Big assert",
   "minimum-stability": "stable",
   "license": "MIT",
   "authors": [
@@ -11,7 +11,7 @@
   ],
   "autoload": {
     "psr-4": {
-      "esposimo\\<namespace>\\": "src/"
+      "esposimo\\assert\\": "src/"
     }
   },
   "require": {

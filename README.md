@@ -2,7 +2,7 @@ README.md
 
 Docker file for php-cli
 ```Dockerfile
-FROM php:8.3-cli
+FROM php:8.3-fpm
 
 # update repo e installazione dipendenze php
 RUN apt update -y && \
@@ -19,7 +19,6 @@ RUN cd /tmp && \
     mv composer.phar /usr/local/bin/composer && \
     rm -f composer-setup.php && \
 ```
-
 
 Dockerfile for apache
 ```Dockerfile
@@ -40,4 +39,18 @@ RUN cd /tmp && \
     mv composer.phar /usr/local/bin/composer && \
     rm -f composer-setup.php && \
     a2enmod rewrite
+```
+
+how to build
+```console
+docker build . -t <build-name>:latest
+docker run --name=<container-name> -d -v <project-path>:/var/www/html <build-name>
+docker exec -it ${CONTAINER_NAME} composer install```
+```
+
+build with apache (host listen 9000)
+```console
+docker build . -t <build-name>:latest
+docker run --name=<container-name> -d -v <project-path>:/var/www/html -p 9000:80 <build-name>
+docker exec -it ${CONTAINER_NAME} composer install```
 ```
