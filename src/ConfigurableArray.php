@@ -1,15 +1,11 @@
 <?php
 
-/**
- * This class represents a configurable array that validates its structure based on predefined rules.
- * ConfigurableArray ensures the structure of the provided array adheres to specific keys and formats.
- */
-
 namespace esposimo\assert;
 
 use InvalidArgumentException;
 use ReflectionException;
 use ReflectionClass;
+use RuntimeException;
 
 /**
  * This class represents a configurable array that validates its structure based on predefined rules and constraints.
@@ -19,38 +15,54 @@ class ConfigurableArray
 
 
     /**
-     * An array defining keys that are required for a particular operation or data structure.
-     * - 'type': Specifies the type or category of the operation or data.
-     * - 'operands': Represents the elements or values involved in the operation.
+     * Lista delle chiavi obbligatorie presenti nella configurazione
      */
-    const array MANDATORY_KEYS = [ 'type', 'operands' ];
+    const array MANDATORY_KEYS = [ 'type', 'check_value' ];
 
     /**
-     * An array defining the optional keys that can be used in a specific context or configuration.
+     * Lista delle chiavi opzionali presenti nella configurazione
      */
-    const array OPTIONAL_KEYS = [ 'properties', 'children' ];
+    const array OPTIONAL_KEYS = [ 'properties', 'children' , 'success', 'fail' ];
 
     /**
-     * Defines an array of keys used to represent operands.
-     */
-    const array OPERAND_KEYS = [ 'left' , 'right'];
-
-    /**
-     * Indicates whether unknown keys should be ignored during processing.
+     * Indica se ignorare o meno chiavi sconosciute
      */
     public static bool $ignoreUnknownKeys = true;
 
-
     /**
-     * Represents a configuration array used to store application settings or parameters.
+     * Rappresenta la configurazione dell'array
      */
     private array $config;
 
+    /**
+     * Contiene i valori da considerare nel caso di condizione <code>true</code>
+     * @var array
+     */
+    protected array $success = array();
 
     /**
-     * Constructor method for initializing the class with configuration.
+     * Contiene i valori da contenere nel caso di condizione <code>false</code>
+     * @var array
+     */
+    protected array $fail = array();
+
+    /**
+     * Contiene il merge dei valori restituiti dall'asserzione e dei suoi figli (solo quelli relativi al risultato dell'asserzione)
+     * @var array
+     */
+    protected array $data = array();
+
+    /**
+     * Contiene il risultato dell'asserzione
+     * @var bool
+     */
+    protected bool $result = false;
+
+    /**
+     * Metodo costruttore per inizializzare la classe con le sue configurazioni
      *
-     * @param array $config An array of configuration values required for initialization.
+     * @param array $config Array di configurazioni
+     * @throws ReflectionException
      * @return void
      */
     public function __construct(array $config)
@@ -60,36 +72,45 @@ class ConfigurableArray
     }
 
     /**
-     * Validates the provided configuration array by performing a series of checks
-     * on its keys, type, operands, and optional parameters.
+     * Valida le configurazioni fornite quando viene istanziata la classe
      *
-     * @param array $config An associative array containing configuration data to be validated.
+     * @param array $config Array di configurazioni che contiene almeno i valori <code>type</code> e <code>check_value</code>
      *
-     * @throws ReflectionException
-     * @return void
+     * @throws InvalidArgumentException|ReflectionException Quando una delle validazioni dell'array di configurazioni fallisce o quando vengono valutate le condizioni
+     *
      */
     public function validate(array $config) : void
     {
         $this->validateKeys($config);
         $this->validateType($config['type']);
-        $this->validateOperands($config['operands']);
         $this->validateOptionalParameters($config);
 
     }
 
     /**
-     * Validates the provided configuration array by ensuring all required keys are present
-     * and no unknown keys exist.
+     * Valida le chiavi fornite nell'array config
      *
-     * @param array $config An associative array containing configuration data to validate.
+     * @param array $config Array di configurazioni da validare. Si assicura che tutte le chiavi necessarie esistano
      *
+     * @throws InvalidArgumentException Se una chiave obbligatoria non esiste, oppure esiste una chiave sconosciuta e <code>ConfigurableArray::$ignoreUnknownKeys</code> è <code>true</code>
      * @return void
+     *
      */
     private function validateKeys(array $config) : void
     {
         $this->validateRequiredKeys($config);
         $this->validateNoUnknownKeys($config);
     }
+
+    /**
+     * Valida che tutte le chiavi obbligatorie siano presenti nell'array di configurazione fornito.
+     *
+     * @param array $config L'array di configurazione da validare. Deve contenere tutte le chiavi richieste definite in MANDATORY_KEYS.
+     *
+     * @throws InvalidArgumentException Se una o più chiavi obbligatorie sono assenti dall'array di configurazione.
+     * @return void
+     *
+     */
     private function validateRequiredKeys(array $config) : void
     {
         foreach(self::MANDATORY_KEYS as $key)
@@ -102,13 +123,17 @@ class ConfigurableArray
     }
 
     /**
-     * Validates the provided configuration array to ensure it does not contain any unknown keys.
-     * Throws an exception if a key is found that is not part of the pre-defined valid keys.
+     * Valida che l'array di configurazione non contenga chiavi sconosciute.
      *
-     * @param array $config An associative array containing configuration data to validate.
+     * @param array $config L'array di configurazione da validare. Le chiavi nell'array devono corrispondere
+     *                      alle chiavi obbligatorie od opzionali previste se la validazione delle chiavi sconosciute è abilitata.
      *
+     * @throws InvalidArgumentException Se l'array di configurazione contiene chiavi che non sono
+     *                                  definite nell'elenco delle chiavi obbligatorie od opzionali.
      * @return void
+     *
      */
+
     private function validateNoUnknownKeys(array $config) : void
     {
         if (!self::$ignoreUnknownKeys)
@@ -126,14 +151,15 @@ class ConfigurableArray
     }
 
     /**
-     * Validates the provided type to ensure it meets the required criteria.
-     * The type must be either a valid assertion type, a callable, or a class that extends AbstractAssertion.
+     * Valida il tipo fornito rispetto ai tipi consentiti o ai vincoli di callable/classi.
      *
-     * @param mixed $type The value to be validated as a type.
+     * @param mixed $type Il tipo da validare. Deve essere un valore presente in
+     *                    AbstractAssertion::ASSERT_LIST, una callable o una classe che
+     *                    estende AbstractAssertion.
      *
-     * @throws InvalidArgumentException If the type is invalid.
+     * @throws InvalidArgumentException Se il tipo fornito non soddisfa uno dei vincoli
+     *                                  specificati.
      * @return void
-     *
      */
     private function validateType($type) : void
     {
@@ -148,27 +174,9 @@ class ConfigurableArray
     }
 
     /**
-     * Validates the provided operands array by ensuring all mandatory keys are present.
+     * Valida i parametri opzionali nell'array di configurazione fornito, se definiti.
      *
-     * @param array $operands An associative array containing operand data to validate.
-     *
-     * @return void
-     */
-    private function validateOperands(array $operands) : void
-    {
-        foreach(self::OPERAND_KEYS as $key)
-        {
-            if (!array_key_exists($key, $operands))
-            {
-                throw new InvalidArgumentException(sprintf("Missing mandatory key '%s' in 'operands' key", $key));
-            }
-        }
-    }
-
-    /**
-     * Validates optional parameters in the given configuration array, if they are defined.
-     *
-     * @param array $config An associative array containing configuration data that may include optional parameters.
+     * @param array $config Un array associativo contenente dati di configurazione che possono includere parametri opzionali.
      *
      * @throws ReflectionException
      * @return void
@@ -178,25 +186,27 @@ class ConfigurableArray
         if (isset($config['properties'])) {
             $this->validateProperties($config['properties']);
         }
-
         if (isset($config['children'])) {
             $this->validateChildren($config['children']);
+        }
+        if (isset($config['success'])) {
+            $this->validateSuccessValue($config['success']);
+        }
+        if (isset($config['fail'])) {
+            $this->validateFailValue($config['fail']);
         }
     }
 
 
     /**
-     * Validates the 'properties' key in the provided configuration array. Ensures that the properties
-     * correspond to valid property names within the appropriate class or assertion type.
+     * Valida la chiave 'properties' nell'array di configurazione fornito.
      *
-     * @param array $config An associative array containing configuration data, specifically including
-     *                      the 'properties' key and 'type' key for validation.
+     * @param array $config L'array di configurazione da validare. Deve contenere una chiave 'properties'
+     *                      con un valore di tipo array e una chiave 'type' valida che faccia riferimento a una classe di asserzione appropriata.
      *
-     * @throws InvalidArgumentException If the 'properties' key is not an array, or if it contains
-     *                                  invalid property names that do not correspond to the expected class.
-     * @throws ReflectionException
+     * @throws InvalidArgumentException|ReflectionException Se la chiave 'properties' non è un array, se viene specificata una proprietà inesistente,
+     *                                  o se la chiave 'type' fa riferimento a una classe non valida.
      * @return void
-     *
      */
     private function validateProperties(array $config) : void
     {
@@ -235,13 +245,13 @@ class ConfigurableArray
     }
 
     /**
-     * Validates the 'children' key in the provided configuration array.
+     * Valida la chiave 'children' nell'array di configurazione fornito.
+     * Garantisce che, se la chiave 'children' esiste, il suo valore sia un array e che
+     * l'array possa essere correttamente inizializzato come un oggetto ConfigurableArray.
      *
-     * @param array $config The configuration array to validate. It should contain a 'children' key
-     *                       with an array value if present.
+     * @param array $config L'array di configurazione da validare.
      *
-     * @throws InvalidArgumentException If the 'children' key is not an array or if an error occurs
-     *                                  while creating a ConfigurableArray instance.
+     * @throws InvalidArgumentException|ReflectionException Se la chiave 'children' non è un array o se l'array non può essere configurato come un ConfigurableArray.
      * @return void
      *
      */
@@ -266,5 +276,102 @@ class ConfigurableArray
         }
     }
 
+    /**
+     * Valida e imposta il valore di 'success'.
+     * Assegna l'array fornito alla proprietà success della classe.
+     *
+     * @param array $success L'array che rappresenta il valore di success da validare e memorizzare.
+     *
+     * @return void
+     */
+    public function validateSuccessValue(array $success) : void
+    {
+        $this->success = $success;
+    }
 
+    /**
+     * Assegna il valore fornito alla proprietà 'fail' della classe.
+     *
+     * @param array $fail L'array
+     */
+    public function validateFailValue(array $fail) : void
+    {
+        $this->fail = $fail;
+    }
+
+    /**
+     * Restituisce il valore della proprietà privata 'result'.
+     *
+     * @return bool Il valore booleano della proprietà 'result'.
+     */
+    public function getResult() : bool
+    {
+        return $this->result;
+    }
+
+    /**
+     * Restituisce i dati memorizzati nella proprietà interna dell'oggetto.
+     *
+     * @return array I dati attualmente memorizzati.
+     */
+    public function getData() : array
+    {
+        return $this->data;
+    }
+
+    /**
+     * Esegue la validazione o l'azione configurata in base all'oggetto di configurazione fornito.
+     * Supporta tipi callable, asserzioni predefinite dall'ASSERT_LIST e asserzioni personalizzate
+     * che estendono AbstractAssertion. Gestisce scenari di successo e fallimento, così come configurazioni
+     * di 'children' quando presenti.
+     *
+     * @throws InvalidArgumentException Se la configurazione o i suoi componenti sono invalidi.
+     * @throws RuntimeException|ReflectionException Se si verifica un errore durante l'esecuzione di callable o asserzioni personalizzate.
+     * @return void
+     *
+     */
+    public function run() : void
+    {
+
+        $config = (object) $this->config;
+
+        $type = $config->type;
+        $check_value = $config->check_value;
+        $properties = ($config->properties) ? $config->properties : [];
+        $success = ($config->success) ? $config->success : [];
+        $fail = ($config->fail) ? $config->fail : [];
+
+        if (is_callable($type))
+        {
+            // capire cosa mettere se è una callable
+            // passare check_value e properties alla callable ?
+        }
+
+        if (in_array($type, AbstractAssertion::ASSERT_LIST))
+        {
+            // ho indicato il nome della classe presente tra quelle disponibili
+            $classname = AbstractAssertion::ASSERT_MAP[$type];
+            $instance = forward_static_call(array($classname, 'createInstance'), $check_value, $properties, $success, $fail);
+            if ($instance->test())
+            {
+                $merge = $instance->getSuccess();
+                if (isset($config->children))
+                {
+                    $childrenConfig = new ConfigurableArray((array) $config->children);
+                    $childrenConfig->run();
+                    $merge = array_merge($merge, $childrenConfig->getData());
+                }
+            }
+            else
+            {
+                $merge = $instance->getFail();
+            }
+            $this->data = $merge;
+        }
+
+        if (class_exists($type) && in_array(AbstractAssertion::class, class_parents($type)))
+        {
+            // ho indicato una classe che estende la AbstractAssertion ma non è definita in AbstractAssertion
+        }
+    }
 }
